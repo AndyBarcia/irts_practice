@@ -2,9 +2,6 @@
 // 07 October 2021
 // Contact: benjamin.schlup@schlup.com
 
-// Initial configuration option: maximum duration until a part arrives
-timer(25000).
-
 // Note that bins would usually be environmental entities and not agents:
 // But it was easier to implement them as agents for experimental purposes.
 
@@ -17,24 +14,31 @@ binnumber(4,binagent4).
 binnumber(5,binagent5).
 binnumber(6,binagent6).
 
+// --- Beliefs ---
+// binfull(N) : standard belief, true if the bin is full, false/absent otherwise. The primary state indicator.
 
--binfull(N) 
+// --- Public Signals (broadcasted) ---
+// needs_parts_public(BinNumber)
+// bin_is_full_public(BinNumber)
+
+// --- Event Handling ---
+
+// When a bin is no longer full (binfull(N) is retracted), broadcast it needs parts.
+-binfull(N)
     : binnumber(N)
-    <- !refill.
+    <- .print("Bin agent ", N, " is now empty.");
+       .broadcast(tell, needs_parts_public(N)).
 
+// When a bin becomes full (binfull(N) is added), broadcast it's full.
++binfull(N)
+    : binnumber(N)
+    <- .print("Bin agent ", N, " is now full.");
+       .broadcast(tell, bin_is_full_public(N)).
+
+// --- Initialisation ---
 +!start : true
  <- .my_name(Agent);
     ?binnumber(N,Agent);
-	+binnumber(N);
-    .print("Bin agent ", N, " started.");
-	!refill.
-
-+!refill : true
- <- ?binnumber(N);
-    ?timer(T);
-    .random(X);
-	.print("Bin agent ",N," waiting ",X*T div 1000, " seconds for new parts...");
-    .wait(X*T);
-	.print("Bin agent ",N," has received new parts.");
-    refill_bin(N).
-                       
+    +binnumber(N); // Add belief for the agent's own bin number
+    .broadcast(tell, needs_parts_public(N)); // Broadcast public signal
+    .print("Bin agent ", N, " started.").

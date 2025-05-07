@@ -20,6 +20,12 @@ MAS irts_practice {
 		// note that binagents should be part of environment and not actually agents on their own
 		// but it was simpler to create these as agents for being quick..
 		binagent #6;
+
+		// Agent responsable for ordery and safe-access to each of the bins.
+		bin_locking_agent;
+
+		// Robots that produce parts for the bins.
+		robot_parts_producer #2;
 	        
 	 	// here come the agents as per official design
 		roboticarmagent;
