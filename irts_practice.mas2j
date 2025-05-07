@@ -1,0 +1,34 @@
+/*
+    irts_practice
+    ---------------------------
+
+    Jason Application File
+
+    This file defines the initial state of the MAS
+
+    Jason 3.3.0
+    May 07, 2025 - 16:33:56
+*/
+
+MAS irts_practice {
+
+    infrastructure: Centralised
+
+    environment: fac1env
+
+    agents: 
+		// note that binagents should be part of environment and not actually agents on their own
+		// but it was simpler to create these as agents for being quick..
+		binagent #6;
+	        
+	 	// here come the agents as per official design
+		roboticarmagent;
+		weldingagent;
+		movingagent;
+		holdingagent #6;
+			
+		// here we introduce an agent in charge of managing the main assembly area
+		assemblyareaagent;
+	
+		aslSourcePath: "src/agt";
+}
