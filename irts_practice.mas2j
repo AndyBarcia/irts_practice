@@ -26,6 +26,9 @@ MAS irts_practice {
 
 		// Robots that produce parts for the bins.
 		robot_parts_producer #2;
+
+		// Human agents that produce parts for the bins.
+		human_producer_bin #4;
 	        
 	 	// here come the agents as per official design
 		roboticarmagent;
