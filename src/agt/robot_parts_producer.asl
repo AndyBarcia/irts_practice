@@ -24,7 +24,7 @@ repair_time(30000).         // Time in ms to repair if broken
     <- +known_needy_bin(N);
        .print("Received needs_parts_public for bin ", N, " (from ", BinAgentName, ").").
 
-+bin_is_full_public(N)[source(BinAgentName)]
+-needs_parts_public(N)[source(BinAgentName)]
     <- -known_needy_bin(N);
        .print("Received bin_is_full_public for bin ", N, " (from ", BinAgentName, ").").
 
@@ -35,7 +35,17 @@ repair_time(30000).         // Time in ms to repair if broken
     : CurrentBinToCheck <= 6 & known_needy_bin(CurrentBinToCheck) & not broken
     <- .print("Bin ", CurrentBinToCheck, " needs parts. Attempting to acquire lock...");
        .my_name(MyRobotName);
-       .send(bin_locking_agent, achieve, try_lock_bin(CurrentBinToCheck, MyRobotName)).
+       
+       // Try to ask for our bin to be locked, waiting up to 2 seconds for a reply.
+       .send(bin_locking_agent, askOne, bin_locked(CurrentBinToCheck, _), bin_locked(_, LockedAgent), 2000);
+       
+       // If we were indeed the ones that got the lock, we can start production.
+       if (LockedAgent == MyRobotName) {
+           !got_bin_lock(CurrentBinToCheck);
+       } else {
+            .print("Bin ", CurrentBinToCheck, " was already locked by ", LockedAgent, ". Moving on."); 
+            !check_and_process_known_needy(CurrentBinToCheck+1);
+       }.
 
 // Case 2: Skip bin N if NOT broken (not needy or already attempting lock).
 +!check_and_process_known_needy(CurrentBinToCheck)
@@ -46,6 +56,7 @@ repair_time(30000).         // Time in ms to repair if broken
 +!check_and_process_known_needy(CurrentBinToCheck)
     : CurrentBinToCheck > 6 & not broken
     <- .print("Finished checking bins up to 6. Restarting cycle...");
+       .wait(1000);
        !check_and_process_known_needy(1).
 
 // Case when Broken: Just wait. Repair plan will restart it.
@@ -56,15 +67,15 @@ repair_time(30000).         // Time in ms to repair if broken
 // --- Plans for Handling Lock Agent Responses ---
 
 // Got the lock, now check for breakdown BEFORE starting production.
-+got_bin_lock(N)[source(bin_locking_agent)]
++!got_bin_lock(N)
     <- ?breakdown_probability(BreakProb);
+       .my_name(MyRobotName);
        .random(R);
        if (R < BreakProb) {
            // Breakdown occurred!
            .print("BREAKDOWN occurred while trying to produce for bin ", N, "!");
            +broken; // Set broken state
            .print("Releasing lock for bin ", N, " due to breakdown.");
-           .my_name(MyRobotName);
            .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName));
        } else {
            // No breakdown, proceed with production
@@ -74,17 +85,9 @@ repair_time(30000).         // Time in ms to repair if broken
            .print("Production for bin ", N, " complete. Refilling.");
            refill_bin(N);
            .print("Releasing lock for bin ", N, ".");
-           .my_name(MyRobotName);
            .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName));
            !continue_scan_after_lock_attempt(N);
        }.
-
-+bin_lock_unavailable(N, CurrentHolder)[source(bin_locking_agent)]
-    <- .print("Lock for bin ", N, " unavailable (held by ", CurrentHolder,"). Moving on.");
-       !continue_scan_after_lock_attempt(N).
-
-+unlocked_bin(N)[source(bin_locking_agent)]
-    <- .print("Lock release for bin ", N, " confirmed by server.").
 
 // --- Plan for Self-Repair ---
 

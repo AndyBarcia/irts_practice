@@ -19,7 +19,6 @@ binnumber(6,binagent6).
 
 // --- Public Signals (broadcasted) ---
 // needs_parts_public(BinNumber)
-// bin_is_full_public(BinNumber)
 
 // --- Event Handling ---
 
@@ -33,7 +32,7 @@ binnumber(6,binagent6).
 +binfull(N)
     : binnumber(N)
     <- .print("Bin agent ", N, " is now full.");
-       .broadcast(tell, bin_is_full_public(N)).
+       .broadcast(untell, needs_parts_public(N)).
 
 // --- Initialisation ---
 +!start : true
