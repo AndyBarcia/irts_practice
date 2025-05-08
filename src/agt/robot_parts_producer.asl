@@ -43,7 +43,8 @@ repair_time(30000).         // Time in ms to repair if broken
        if (LockedAgent == MyRobotName) {
            !got_bin_lock(CurrentBinToCheck);
        } else {
-            .print("Bin ", CurrentBinToCheck, " was already locked by ", LockedAgent, ". Moving on."); 
+            .print("Bin ", CurrentBinToCheck, " was already locked by ", LockedAgent, ". Moving on.");
+            .wait(1000);
             !check_and_process_known_needy(CurrentBinToCheck+1);
        }.
 
