@@ -12,72 +12,51 @@ repair_time(30000).         // Time in ms to repair if broken
 // --- Beliefs for State Management ---
 // +broken : Robot is currently broken and undergoing repairs.
 
-// --- Plans to React to Broadcasts from Bin Agents  ---
+// --- Plans for Monitoring Bins for Parts ---
 
-+needs_parts_public(N)
-    <- .print("Notified that bin ", N, " needs parts.");
-       // From now on, we want to lock this bin to work on it.
-       !attempt_to_lock_bin(N).
-
--needs_parts_public(N)
-    <- .print("Notified that bin ", N, " no longer needs parts.");
-       // From now on we have no interest in locking this bin.
-       .drop_desire(attempt_to_lock_bin(N)).
-
-// --- Main Loop: Checking and Processing Known Needy Bins (Iterative Scan) ---
-
-+!attempt_to_lock_bin(N)
-    : not broken & not got_bin_lock(_) & needs_parts_public(N)
-    <- .print("Attempting to lock bin ", N, "...");
-       .my_name(MyRobotName);
-       // Try to ask for our bin to be locked, waiting up to 2 seconds for a reply.
-       .send(bin_locking_agent, askOne, bin_locked(N, _), bin_locked(N, LockedAgent), 2000);
-       // If we were indeed the ones that got the lock, we can start production.
-       if (LockedAgent == MyRobotName) {
-           !got_bin_lock(N);
-       } else {
-            .print("Bin ", N, " was already locked by ", LockedAgent, ".");
-            .wait(1000);
-            !attempt_to_lock_bin(N);
-       }.
-
-+!attempt_to_lock_bin(N)
-    : not broken & got_bin_lock(_) & needs_parts_public(N)
-    <- .print("I'm already working on a bin. Skipping.");
++!monitor_bins_for_parts
+    : not broken
+    <- .print("Monitoring bins for parts...");
+       // Iterate all bins that are known to need parts.
+       for ( needs_parts_public(N) ) {
+           .print("Notified that bin ", N, " needs parts.");
+           .my_name(MyRobotName);
+           // Try to ask for our bin to be locked, waiting up to 2 seconds for a reply.
+           .send(bin_locking_agent, askOne, bin_locked(N, _), bin_locked(N, LockedAgent), 2000);
+           // If we were indeed the ones that got the lock, we can start production.
+           if (LockedAgent == MyRobotName) {
+               !process_bin(N);
+               // Drop the desire to monitor bins so that we can focus
+               // on the bin we just got the lock for.
+               drop_desire(monitor_bins_for_parts);
+           } else {
+               .print("Bin ", N, " was already locked by ", LockedAgent, ".");
+           };
+       }
+       // If all bins are done, or are being processed by other agents,
+       // wait a second and check again.
        .wait(4000);
-       !attempt_to_lock_bin(N).
-
-+!attempt_to_lock_bin(N)
-    : broken & needs_parts_public(N)
-    <- .print("I'm broken, so I can't work on this bin. Skipping.");
-       .wait(4000);
-       !attempt_to_lock_bin(N).
-
-+!attempt_to_lock_bin(N)
-    : not needs_parts_public(N)
-    <- .print("Bin ", N, " no longer needs parts. Skipping.").
+       !monitor_bins_for_parts.
 
 // --- Plans for Handling Lock Agent Responses ---
 
-// Got the lock, now check for breakdown BEFORE starting production.
-+!got_bin_lock(N)
++!process_bin(N)
     <- ?breakdown_probability(BreakProb);
        .my_name(MyRobotName);
        .random(R);
        if (R < BreakProb) {
            .print("BREAKDOWN occurred while trying to produce for bin ", N, "!");
            +broken;
-           // Mantain desire to lock the bin again when we're repaired.
-           !attempt_to_lock_bin(N);
        } else {
            .print("Lock acquired for bin ", N, ". Starting production (no breakdown).");
            ?robot_production_time(ProdTime);
            .wait(ProdTime);
            .print("Production for bin ", N, " complete. Refilling.");
            refill_bin(N);
+           !monitor_bins_for_parts.
        };
        .print("Releasing lock for bin ", N, ".");
-       .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName)).
+       .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName));
 
 // --- Plan for Self-Repair ---
 
@@ -86,4 +65,5 @@ repair_time(30000).         // Time in ms to repair if broken
        .print("Starting repair process (", RepairTime/1000, "s).");
        .wait(RepairTime);
        .print("Repair complete.");
-       -broken. // Clear broken state
+       -broken;
+       !monitor_bins_for_parts.
