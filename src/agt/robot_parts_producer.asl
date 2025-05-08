@@ -20,6 +20,9 @@ repair_time(30000).         // Time in ms to repair if broken
 
 // --- Plans to React to Broadcasts from Bin Agents  ---
 
+// TODO: for each needs_parts_public, add an attempt_to_lock_bin desir whose plan
+// only gets executed if the robot is not already working on a bin.
+
 +needs_parts_public(N)[source(BinAgentName)]
     <- +known_needy_bin(N);
        .print("Received needs_parts_public for bin ", N, " (from ", BinAgentName, ").").
