@@ -1,6 +1,4 @@
 // Agent file: robot_parts_producer.asl
-// Proactively identifies needy bins by iterating through its known_needy_bin beliefs and processes them in a continuous loop.
-// Includes random breakdown and repair mechanism.
 
 // --- Initial Beliefs ---
 robot_production_time(7000). // Simulate 7 seconds for robot to produce parts
@@ -12,61 +10,52 @@ breakdown_probability(0.1).  // Probability (0.0 to 1.0) of breaking when starti
 repair_time(30000).         // Time in ms to repair if broken
 
 // --- Beliefs for State Management ---
-// +known_needy_bin(BinNumber) : Robot knows this bin needs parts, learned from a broadcast.
 // +broken : Robot is currently broken and undergoing repairs.
-
-// --- Initial Goal ---
-!check_and_process_known_needy(1).
 
 // --- Plans to React to Broadcasts from Bin Agents  ---
 
-// TODO: for each needs_parts_public, add an attempt_to_lock_bin desir whose plan
-// only gets executed if the robot is not already working on a bin.
++needs_parts_public(N)
+    <- .print("Notified that bin ", N, " needs parts.");
+       // From now on, we want to lock this bin to work on it.
+       !attempt_to_lock_bin(N).
 
-+needs_parts_public(N)[source(BinAgentName)]
-    <- +known_needy_bin(N);
-       .print("Received needs_parts_public for bin ", N, " (from ", BinAgentName, ").").
-
--needs_parts_public(N)[source(BinAgentName)]
-    <- -known_needy_bin(N);
-       .print("Received bin_is_full_public for bin ", N, " (from ", BinAgentName, ").").
+-needs_parts_public(N)
+    <- .print("Notified that bin ", N, " no longer needs parts.");
+       // From now on we have no interest in locking this bin.
+       .drop_desire(attempt_to_lock_bin(N)).
 
 // --- Main Loop: Checking and Processing Known Needy Bins (Iterative Scan) ---
 
-// Case 1: Check bin N if NOT broken.
-+!check_and_process_known_needy(CurrentBinToCheck)
-    : CurrentBinToCheck <= 6 & known_needy_bin(CurrentBinToCheck) & not broken
-    <- .print("Bin ", CurrentBinToCheck, " needs parts. Attempting to acquire lock...");
++!attempt_to_lock_bin(N)
+    : not broken & not got_bin_lock(_) & needs_parts_public(N)
+    <- .print("Attempting to lock bin ", N, "...");
        .my_name(MyRobotName);
-       
        // Try to ask for our bin to be locked, waiting up to 2 seconds for a reply.
-       .send(bin_locking_agent, askOne, bin_locked(CurrentBinToCheck, _), bin_locked(_, LockedAgent), 2000);
-       
+       .send(bin_locking_agent, askOne, bin_locked(N, _), bin_locked(N, LockedAgent), 2000);
        // If we were indeed the ones that got the lock, we can start production.
        if (LockedAgent == MyRobotName) {
-           !got_bin_lock(CurrentBinToCheck);
+           !got_bin_lock(N);
        } else {
-            .print("Bin ", CurrentBinToCheck, " was already locked by ", LockedAgent, ". Moving on.");
+            .print("Bin ", N, " was already locked by ", LockedAgent, ".");
             .wait(1000);
-            !check_and_process_known_needy(CurrentBinToCheck+1);
+            !attempt_to_lock_bin(N);
        }.
 
-// Case 2: Skip bin N if NOT broken (not needy or already attempting lock).
-+!check_and_process_known_needy(CurrentBinToCheck)
-    : CurrentBinToCheck <= 6 & not broken & not known_needy_bin(CurrentBinToCheck)
-    <- !check_and_process_known_needy(CurrentBinToCheck+1).
++!attempt_to_lock_bin(N)
+    : not broken & got_bin_lock(_) & needs_parts_public(N)
+    <- .print("I'm already working on a bin. Skipping.");
+       .wait(4000);
+       !attempt_to_lock_bin(N).
 
-// Base Case / Loop Restart: Only restart if NOT broken.
-+!check_and_process_known_needy(CurrentBinToCheck)
-    : CurrentBinToCheck > 6 & not broken
-    <- .print("Finished checking bins up to 6. Restarting cycle...");
-       .wait(1000);
-       !check_and_process_known_needy(1).
++!attempt_to_lock_bin(N)
+    : broken & needs_parts_public(N)
+    <- .print("I'm broken, so I can't work on this bin. Skipping.");
+       .wait(4000);
+       !attempt_to_lock_bin(N).
 
-// Case when Broken: Just wait. Repair plan will restart it.
-+!check_and_process_known_needy(_)
-    : broken
-    <- .print("Currently broken. Check loop paused.").
++!attempt_to_lock_bin(N)
+    : not needs_parts_public(N)
+    <- .print("Bin ", N, " no longer needs parts. Skipping.").
 
 // --- Plans for Handling Lock Agent Responses ---
 
@@ -76,22 +65,19 @@ repair_time(30000).         // Time in ms to repair if broken
        .my_name(MyRobotName);
        .random(R);
        if (R < BreakProb) {
-           // Breakdown occurred!
            .print("BREAKDOWN occurred while trying to produce for bin ", N, "!");
-           +broken; // Set broken state
-           .print("Releasing lock for bin ", N, " due to breakdown.");
-           .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName));
+           +broken;
+           // Mantain desire to lock the bin again when we're repaired.
+           !attempt_to_lock_bin(N);
        } else {
-           // No breakdown, proceed with production
            .print("Lock acquired for bin ", N, ". Starting production (no breakdown).");
            ?robot_production_time(ProdTime);
            .wait(ProdTime);
            .print("Production for bin ", N, " complete. Refilling.");
            refill_bin(N);
-           .print("Releasing lock for bin ", N, ".");
-           .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName));
-           !continue_scan_after_lock_attempt(N);
-       }.
+       };
+       .print("Releasing lock for bin ", N, ".");
+       .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName)).
 
 // --- Plan for Self-Repair ---
 
@@ -100,18 +86,4 @@ repair_time(30000).         // Time in ms to repair if broken
        .print("Starting repair process (", RepairTime/1000, "s).");
        .wait(RepairTime);
        .print("Repair complete.");
-       -broken; // Clear broken state
-       .print("Restarting check loop after repair.");
-       !check_and_process_known_needy(1). // Restart main loop from beginning
-
-// --- Helper Plan to Continue Scan Iteration ---
-
-+!continue_scan_after_lock_attempt(LastCheckedBin)
-    : LastCheckedBin < 6 & not broken // Only continue if not broken
-    <- !check_and_process_known_needy(LastCheckedBin + 1).
-
-+!continue_scan_after_lock_attempt(LastCheckedBin)
-    : (LastCheckedBin >= 6 | broken) // If reached end OR broken, trigger restart check/wait plan
-    <- .print("Reached end of check sequence (or broken) after processing bin ", LastCheckedBin, "). Triggering restart check...");
-       !check_and_process_known_needy(LastCheckedBin + 1). // This will match N > 6 or the broken plan
-
+       -broken. // Clear broken state
