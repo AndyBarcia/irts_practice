@@ -32,7 +32,7 @@ MAS irts_practice {
 	        
 	 	// here come the agents as per official design
 		roboticarmagent;
-		weldingagent;
+		weldingagent #2;
 		movingagent;
 		holdingagent #6;
 			

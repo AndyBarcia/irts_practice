@@ -16,6 +16,8 @@ import java.util.logging.*;
 
 import java.util.Random;
 import java.util.Arrays;
+import java.util.Map;
+import java.util.HashMap;
 
 
 import java.awt.Dimension;
@@ -45,7 +47,8 @@ public class fac1env extends Environment {
 	public static final int[] partLengths = new int[]{ 55,410,452,256,275,167 };
 	public static final int[][] holderPositions = new int[][]{ {910,210},{757,183},{785,270},{500,309},{422,309},{449,448} };
 	public static final int[] armPosition = new int[] {600, 613};	
-	public static final int[] welderRobotPosition = new int[] {1000, 70};
+	public static final int[] welderRobotPosition1 = new int[] {1000, 70}; // Top right
+	public static final int[] welderRobotPosition2 = new int[] {1000, 613}; // Bottom right
 	public static final int[] moverRobotPosition = new int[] {300, 70};		
 	public static final int[][] binPositions = new int[][]{{270,538},{270,568},{270,598},{270,628},{270,658},{270,688}};
 	public static final int[][] jointPositions = new int[][]{{914,194},{501,197},{534,460},{501,215},{358,459}};
@@ -111,7 +114,7 @@ public class fac1env extends Environment {
 				int z = (int)((NumberTerm)action.getTerm(2)).solve();
                 model.moveTowards(ag,x,y,z);
 	    	} else if (action.equals(Literal.parseLiteral("weld"))) {
-                model.weld();
+                model.weld(ag);
 			}
         } catch (Exception e) {
             e.printStackTrace();
@@ -142,8 +145,9 @@ public class fac1env extends Environment {
 		addPercept(Literal.parseLiteral("parts("+Integer.toString(parts)+")"));
 		addPercept(Literal.parseLiteral("holders("+Integer.toString(holders)+")"));
 		addPercept(Literal.parseLiteral("joints("+Integer.toString(joints)+")"));
-		addPercept(Literal.parseLiteral("armPosition("+Integer.toString(armPosition[0])+","+Integer.toString(armPosition[1])+")"));
-		addPercept(Literal.parseLiteral("welderRobotPosition("+Integer.toString(welderRobotPosition[0])+","+Integer.toString(welderRobotPosition[1])+")"));
+		addPercept(Literal.parseLiteral("armPosition("+Integer.toString(armPosition[0])+","+Integer.toString(armPosition[1])+")"));		
+		addPercept(Literal.parseLiteral("welderRobotPosition1("+Integer.toString(welderRobotPosition1[0])+")"));	
+		addPercept(Literal.parseLiteral("welderRobotPosition2("+Integer.toString(welderRobotPosition2[0])+")"));
 		for (int i=0; i<parts; i++) {
 			addPercept(Literal.parseLiteral("partLength("+Integer.toString(i+1)+","+Integer.toString(partLengths[i])+")"));
 			addPercept(Literal.parseLiteral("holderPosition("+Integer.toString(i+1)+","+Integer.toString(holderPositions[i][0])+","+Integer.toString(holderPositions[i][1])+")"));
@@ -172,11 +176,18 @@ public class fac1env extends Environment {
 		}
 
 		// Update welder percept
-		Literal newWelderPercept = Literal.parseLiteral("welder("+Integer.toString(model.welderPosition[0])+","+Integer.toString(model.welderPosition[1])+")");
-		if (newWelderPercept != model.welderPercept) {
-			removePercept(model.welderPercept);
-			model.welderPercept = newWelderPercept;
-			addPercept(model.welderPercept);
+		for (String agentName : model.welderPositions.keySet()) {
+			int[] currentPos = model.welderPositions.get(agentName);
+			Literal oldPercept = model.welderPercepts.get(agentName);
+			Literal newPercept = Literal.parseLiteral("welder(" + currentPos[0] + "," + currentPos[1] + ")");
+
+			if (oldPercept == null || !newPercept.equals(oldPercept)) {
+				if (oldPercept != null) {
+					removePercept(agentName, oldPercept);
+				}
+				model.welderPercepts.put(agentName, newPercept);
+				addPercept(agentName, newPercept);
+			}
 		}
 
 		// Update mover percept
@@ -194,16 +205,16 @@ public class fac1env extends Environment {
 		public Boolean[] binfull = new Boolean[bins];
 		public int gripperPart = -1;    // gripper does not hold anything
 		public int gripperAngle = 90;   // initial gripper angle
-		public boolean welding = false; // welder not in action
+		public Map<String, Boolean> weldingStatus = new HashMap<>();
 		public boolean moving = false;  // mover not holding a frame
 		public Boolean[] holding  = new Boolean[bins];
 		public Boolean[] joint  = new Boolean[joints];
 		public Boolean[] lockArea  = new Boolean[lockareas];
 		public int[] gripperPosition = new int[] {270, 613, 90};
-		public int[] welderPosition = new int[] {1000, 470};
+		public Map<String, int[]> welderPositions = new HashMap<>();
 		public int[] moverPosition = new int[] {500, 70};
 		public Literal gripperPercept = Literal.parseLiteral("gripper(270,613,90)");
-		public Literal welderPercept = Literal.parseLiteral("welder(1000,470)");
+		public Map<String, Literal> welderPercepts = new HashMap<>();
 		public Literal moverPercept = Literal.parseLiteral("mover(500,70)");
 				
         Random random = new Random(System.currentTimeMillis());
@@ -213,6 +224,16 @@ public class fac1env extends Environment {
 			Arrays.fill(holding, Boolean.FALSE);
 			Arrays.fill(joint, Boolean.FALSE);
 			Arrays.fill(lockArea, Boolean.FALSE);
+
+			// Initialize for two welders
+			welderPositions.put("weldingagent1", new int[]{1000, 470}); // Default position for welder 1
+			welderPositions.put("weldingagent2", new int[]{800, 613}); // Default position for welder 2
+			
+			weldingStatus.put("weldingagent1", false);
+			weldingStatus.put("weldingagent2", false);
+
+			// Initial percepts can be null or pre-calculated here
+			// For simplicity, they will be created/updated in updatePercepts()
         }
 		
 		public boolean holding() {
@@ -233,15 +254,20 @@ public class fac1env extends Environment {
 			}
         }
 		
-        void weld() {
+        void weld(String agName) {
+			if (!welderPositions.containsKey(agName)) return; // Not a known welder
+
+			int[] currentWelderPos = welderPositions.get(agName);
 			for (int i=0; i<joints; i++) {
-				if (welderPosition[0] == jointPositions[i][0] &&
-			     	welderPosition[1] == jointPositions[i][1]) {
-						logger.info("Welding");
-					welding = true;
-					try { Thread.sleep(5000); } catch (Exception e) {}
-					joint[i] = true;
-					welding = false;
+				if (currentWelderPos[0] == jointPositions[i][0] &&
+			     	currentWelderPos[1] == jointPositions[i][1]) {
+						logger.info("Welder " + agName + " starting weld at joint " + (i+1));
+					weldingStatus.put(agName, true);
+					try { Thread.sleep(5000); } catch (Exception e) {} // Consider making this non-blocking or configurable
+					joint[i] = true; // Assuming any welder can weld any joint if in position
+					weldingStatus.put(agName, false);
+					logger.info("Welder " + agName + " finished weld at joint " + (i+1));
+					// No need to break, a welder might be at an intersection of multiple "weldable" spots if joints overlap
 				}
 			}
 		}
@@ -276,16 +302,17 @@ public class fac1env extends Environment {
 				}
 			}
 		
-			if (ag.equals("weldingagent")) {
-				if (welderPosition[0] > x) {
-					welderPosition[0] = Math.max(x, welderPosition[0]-5);
+			if (welderPositions.containsKey(ag)) {
+				int[] currentPos = welderPositions.get(ag);
+				if (currentPos[0] > x) {
+					currentPos[0] = Math.max(x, currentPos[0]-5);
 				} else {
-					welderPosition[0] = Math.min(x, welderPosition[0]+5);
+					currentPos[0] = Math.min(x, currentPos[0]+5);
 				}
-				if (welderPosition[1] > y) {
-					welderPosition[1] = Math.max(y, welderPosition[1]-5);
+				if (currentPos[1] > y) {
+					currentPos[1] = Math.max(y, currentPos[1]-5);
 				} else {
-					welderPosition[1] = Math.min(y, welderPosition[1]+5);
+					currentPos[1] = Math.min(y, currentPos[1]+5);
 				}
 			}
 			
@@ -462,27 +489,47 @@ public class fac1env extends Environment {
 			gg.fillOval(model.gripperPosition[0]-12,model.gripperPosition[1]-12, 24,24);
 				
 			// Paint welder robot
-			if (model.welding) {
-				if (random.nextBoolean()) {
-					gg.setColor(Color.orange);
-					gg.fillOval(model.welderPosition[0]-22,model.welderPosition[1]-22, 44,44);
+			for (Map.Entry<String, int[]> entry : model.welderPositions.entrySet()) {
+				String agentName = entry.getKey();
+				int[] welderPos = entry.getValue();
+				boolean isWelding = model.weldingStatus.getOrDefault(agentName, false);
+
+				// Determine base position for this welder
+				int[] baseDrawPosition;
+				String welderLabel;
+				if (agentName.equals("weldingagent2")) {
+					baseDrawPosition = welderRobotPosition2;
+					welderLabel = "Welder 2";
+				} else {
+					baseDrawPosition = welderRobotPosition1;
+					welderLabel = "Welder 1";
 				}
-				gg.setColor(Color.RED);
-				gg.fillOval(model.welderPosition[0]-14,model.welderPosition[1]-14, 28,28);
-			} else {
+
+				if (isWelding) {
+					if (random.nextBoolean()) {
+						gg.setColor(Color.orange);
+						gg.fillOval(welderPos[0]-22,welderPos[1]-22, 44,44);
+					}
+					gg.setColor(Color.RED);
+					gg.fillOval(welderPos[0]-14,welderPos[1]-14, 28,28);
+				} else {
+					gg.setColor(Color.BLUE);
+					gg.fillOval(welderPos[0]-14,welderPos[1]-14, 28,28);
+				}
 				gg.setColor(Color.BLUE);
-				gg.fillOval(model.welderPosition[0]-14,model.welderPosition[1]-14, 28,28);
+				// Use determined base position and label
+				gg.drawString(welderLabel, baseDrawPosition[0]-150, baseDrawPosition[1]+50); 
+				
+				gg.setStroke(new BasicStroke(15));
+				gg.drawLine(baseDrawPosition[0], baseDrawPosition[1], welderPos[0], welderPos[1]); 
+				gg.drawLine(baseDrawPosition[0]-50, baseDrawPosition[1]-50, baseDrawPosition[0]+50, baseDrawPosition[1]+50);
+				gg.drawLine(baseDrawPosition[0]-50, baseDrawPosition[1]+50, baseDrawPosition[0]+50, baseDrawPosition[1]-50);
+				gg.fillOval(baseDrawPosition[0]-20, baseDrawPosition[1]-20, 40, 40);
+				
+				gg.setColor(Color.WHITE);
+				gg.setStroke(new BasicStroke(5));
+				gg.drawLine(baseDrawPosition[0], baseDrawPosition[1], welderPos[0], welderPos[1]);			
 			}
-			gg.setColor(Color.BLUE);
-			gg.drawString("Welding Bot",welderRobotPosition[0]-150, welderRobotPosition[1]);
-			gg.setStroke(new BasicStroke(15));
-			gg.drawLine(welderRobotPosition[0], welderRobotPosition[1], model.welderPosition[0], model.welderPosition[1]);
-			gg.drawLine(welderRobotPosition[0]-50, welderRobotPosition[1]-50, welderRobotPosition[0]+50, welderRobotPosition[1]+50);
-			gg.drawLine(welderRobotPosition[0]-50, welderRobotPosition[1]+50, welderRobotPosition[0]+50, welderRobotPosition[1]-50);
-			gg.fillOval(welderRobotPosition[0]-20, welderRobotPosition[1]-20, 40, 40);
-			gg.setColor(Color.WHITE);
-			gg.setStroke(new BasicStroke(5));
-			gg.drawLine(welderRobotPosition[0], welderRobotPosition[1], model.welderPosition[0], model.welderPosition[1]);			
 
 			// Paint moving robot 
 			if (model.moving) {

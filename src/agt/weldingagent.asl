@@ -2,9 +2,9 @@
 // 07 October 2021
 // Contact: benjamin.schlup@schlup.com
 
-// Belief of a position where we can park the welding tool outside
-// the main assembly area
-waitingposition(1000,470).
+// Beliefs mapping agent names to their specific resting positions.
+welding_rest_position(weldingagent1, 1000, 470).
+welding_rest_position(weldingagent2, 800, 613).
 
 // Let's assume a welder percept is not always available: let's retry
 // (Background are limitations of the environment simulation.)
@@ -26,7 +26,10 @@ holdersReleased :- holders(N) & holdersReleased(N).
 !main.
 
 +!main : true
-<- .print("Welding robot: waiting for new parts");
+<- .my_name(MyAgentName);
+   ?welding_rest_position(MyAgentName, RestX, RestY);
+   +my_waiting_position(RestX, RestY);
+   .print("Welding robot ", MyAgentName, " initialized. Waiting position: (", RestX, ",", RestY, ")");
    !weldParts.
 
 // Forget welded joints if all holders have been released
@@ -87,12 +90,13 @@ holdersReleased :- holders(N) & holdersReleased(N).
 +!moveTo(X,Y) : welder(X,Y).
 
 // When the robot has no job, park the arm outside the main assembly area
-+!parkArm : waitingposition(X,Y) & not welder(X,Y)
-<- !moveTo(X,Y);
++!parkArm : my_waiting_position(ParkX,ParkY) & not welder(ParkX,ParkY)
+<- !moveTo(ParkX,ParkY);
    !parkArm.
    
-+!parkArm : lockedArea(Area)
-<- !moveTo(X,Y);
++!parkArm 
+   : lockedArea(Area) & my_waiting_position(ParkX, ParkY)
+<- !moveTo(ParkX, ParkY); // Move to its own parking spot first
    .print("Welding arm agent: releasing lock from area ",Area);
    .my_name(Agent);
    .send(assemblyareaagent,achieve,unlockAreaFor(Agent,Area));
