@@ -33,6 +33,7 @@ repair_time(30000).         // Time in ms to repair if broken
            .send(bin_locking_agent, askOne, bin_locked(N, _), bin_locked(N, LockedAgent), 2000);
            // If we were indeed the ones that got the lock, we can start production.
            if (LockedAgent == MyRobotName) {
+               .print("Lock acquired for bin ", N, ". Starting production.");
                !process_bin(N);
                // Drop the desire to monitor bins so that we can focus
                // on the bin we just got the lock for.
@@ -43,6 +44,7 @@ repair_time(30000).         // Time in ms to repair if broken
        }
        // If all bins are done, or are being processed by other agents,
        // wait a second and check again.
+       .print("No bins to process. Waiting 4 seconds before next check.");
        .wait(4000);
        !monitor_bins_for_parts.
 
@@ -54,17 +56,19 @@ repair_time(30000).         // Time in ms to repair if broken
        .random(R);
        if (R < BreakProb) {
            .print("BREAKDOWN occurred while trying to produce for bin ", N, "!");
+           .print("Releasing lock for bin ", N, ".");
+           .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName));
            +broken;
        } else {
-           .print("Lock acquired for bin ", N, ". Starting production (no breakdown).");
+           .print("Starting production for bin ", N, ".");
            ?robot_production_time(ProdTime);
            .wait(ProdTime);
            .print("Production for bin ", N, " complete. Refilling.");
            refill_bin(N);
+           .print("Releasing lock for bin ", N, ".");
+           .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName));
            !monitor_bins_for_parts;
-       };
-       .print("Releasing lock for bin ", N, ".");
-       .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName)).
+       }.
 
 // --- Plan for Self-Repair ---
 
