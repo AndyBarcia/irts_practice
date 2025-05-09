@@ -2,7 +2,8 @@
 // Produces parts for an assigned bin, determined by its instance name and by listening to public broadcasts.
 
 // --- Static Configuration Beliefs ---
-production_time(15000).     // Simulate 15 seconds to produce parts for the bin
+production_time(5000).     // Simulate 15 seconds to produce parts for the bin
+distracted_production_time(15000).     // Simulate 15 seconds to produce parts for the bin
 check_interval(3000).       // Interval to check bin status if not actively working
 retry_lock_interval(5000).  // Interval to wait before retrying a failed lock
 period_duration(80). // How long the human works for
@@ -34,7 +35,9 @@ human_bin(human_producer_bin4, 4).
        +working_speed(ProdTime);
        +period_start_time(0);
        .print(MySelf, " started. Assigned to bin: ", MyBinNumber, ".");
-       !start_period.
+       // Asynchronously start the period and monitor the quota.
+       !!start_period;
+       !!monitor_quota.
 
 +!start_period
     <- .print("Standard period started.");
@@ -46,7 +49,6 @@ human_bin(human_producer_bin4, 4).
        StartTime = H * 3600 + M * 60 + S;
        -+period_start_time(StartTime);
        ?period_start_time(TestTime);
-       !monitor_quota;
 
        // Wait for the period to end.
        ?period_duration(Duration);
@@ -62,7 +64,7 @@ human_bin(human_producer_bin4, 4).
             .print("Quota met or exceeded.") 
         };
         -+produced_in_period(0);
-        !start_period.       
+        !!start_period.       
 
 // --- Plan to Monitor Quota ---
 +!monitor_quota
@@ -84,14 +86,12 @@ human_bin(human_producer_bin4, 4).
            NeededAvgTime = (TimeRemaining / QuotaRemaining)*1000;
            if (ProdTime > NeededAvgTime) {
                -on_schedule;
-               +working_speed(NeededAvgTime);
+               -+working_speed(NeededAvgTime);
            } else {
                +on_schedule;
-               +working_speed(ProdTime);
            }
        } else {
            +on_schedule;
-           +working_speed(ProdTime);
        }
 
        // Randomly be bored.
@@ -108,12 +108,12 @@ human_bin(human_producer_bin4, 4).
 
 // --- Plans to React to Behind Schedule ---
 
--on_schedule
+-on_schedule[source(self)]
     <- .print("Going behind schedule! Working faster!");
-       // If I'm behind schedule, I don't want to chat.
+       // If I'm behind schedule, I don't want to chat, and if I'm chatting, I want to stop.
        .drop_desire(want_to_chat(_)).
 
-+on_schedule
++on_schedule[source(self)]
     <- .print("On schedule!").
 
 // --- Plans to React to Boredom ---
@@ -145,13 +145,20 @@ human_bin(human_producer_bin4, 4).
 +!want_to_chat(OtherHumanName)
     : on_schedule
     <- .print("I want to chat with ", OtherHumanName, "!");
+       // Make production time longer when chatting.
+       ?distracted_production_time(DistractedProductionTime);
+       -+working_speed(DistractedProductionTime);
+       // Select random chat duration.
        ?max_chat_delay(MaxDelay);
        ?min_chat_delay(MinDelay);
        .random(R);
        ChatDelay = MinDelay + (MaxDelay - MinDelay) * R;
        .print("Chatting with ", OtherHumanName, " for ", ChatDelay/1000, " seconds.");
        .wait(ChatDelay);
-       -bored.
+       -bored;
+       // Make production time shorter when done chatting.
+       ?production_time(ProductionTime);
+       -+working_speed(ProductionTime).
 
 +!want_to_chat(OtherHumanName)
     : not on_schedule
@@ -164,10 +171,11 @@ human_bin(human_producer_bin4, 4).
     : my_bin_number(N)
     <- .print("Learned my bin ", N, " needs parts via broadcast.");
        !attempt_to_lock_bin.
-       
-// If a bin is now full, we stop attempting to lock it.
+
+// If a bin is now full and we dont have the lock, we stop attempting 
+// to lock it.
 -needs_parts_public(N)
-    : my_bin_number(N)
+    : my_bin_number(N) & not got_bin_lock
     <- .print("Learned my bin ", N, " is now full via broadcast.");
        .drop_desire(attempt_to_lock_bin).
 
@@ -175,14 +183,16 @@ human_bin(human_producer_bin4, 4).
 
 // Try to lock our bin by asking the bin_locking_agent.
 +!attempt_to_lock_bin
-    : my_bin_number(MyBin) & not got_bin_lock
+    : my_bin_number(MyBin)
     <- .my_name(MyHumanName);
+       .print("Attempting to lock bin ", MyBin, ".");
 
        // Try to ask for our bin to be locked, waiting up to 2 seconds for a reply.
        .send(bin_locking_agent, askOne, bin_locked(MyBin, _), bin_locked(_, LockedAgent), 2000);
        
        // If we were indeed the ones that got the lock, we can start production.
        if (LockedAgent == MyHumanName) {
+           .print("Bin ", MyBin, " locked for ", MyHumanName, ". Starting production.");
            +got_bin_lock;
        } else {
            .print("Bin ", MyBin, " was already locked by ", LockedAgent, ". Retrying...");
@@ -191,12 +201,9 @@ human_bin(human_producer_bin4, 4).
            !attempt_to_lock_bin;
        }.
 
-// If already got the lock for the bin, do nothing.
-+!attempt_to_lock_bin : got_bin_lock.
-
 // --- Plans for Handling Lock Agent Responses ---
 
-+got_bin_lock
++got_bin_lock[source(self)]
     : my_bin_number(MyBin)
     <- .print("Lock acquired for bin ", MyBin, ". Starting production.");
        ?working_speed(ProdTime);

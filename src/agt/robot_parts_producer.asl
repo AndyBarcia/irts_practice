@@ -35,9 +35,6 @@ repair_time(30000).         // Time in ms to repair if broken
            if (LockedAgent == MyRobotName) {
                .print("Lock acquired for bin ", N, ". Starting production.");
                !process_bin(N);
-               // Drop the desire to monitor bins so that we can focus
-               // on the bin we just got the lock for.
-               drop_desire(monitor_bins_for_parts);
            } else {
                .print("Bin ", N, " was already locked by ", LockedAgent, ".");
            };

@@ -99,10 +99,21 @@ waitingposition(270,613,90).
 // potential cocurrent intention to park the robotic arm
 +!pickupPart(Part) : true
 <- .drop_intention(parkArm);
-   .print("Robotic arm agent: picking part from bin ", Part, ".");
-   ?binPosition(Part,X1,Y1);
-   !moveTo(X1,Y1,90);
-   pick_part(Part).
+   .print("Robotic arm agent: requesting lock for bin ", Part, ".");
+   .my_name(MyAgentName);
+   // Try to ask for our bin to be locked, waiting up to 2 seconds for a reply.
+   .send(bin_locking_agent, askOne, bin_locked(Part, _), bin_locked(Part, LockedAgent), 2000);
+   // If we were indeed the ones that got the lock, we can start production.
+   if (LockedAgent == MyAgentName) {
+       .print("Robotic arm agent: lock acquired for bin ", Part, ". Picking up part.");
+       ?binPosition(Part,X1,Y1);
+       !moveTo(X1,Y1,90);
+       pick_part(Part);
+   } else {
+       .print("Robotic arm agent: bin ", Part, " was already locked by ", LockedAgent, ". Retrying in 2 seconds.");
+       .wait(2000);
+       !pickupPart(Part); // Retry picking up the same part
+   }.
 
 // The sub-plan to actually position the part in a holder unless the holder
 // confirms (via percept) it has fixed the part
@@ -119,6 +130,9 @@ waitingposition(270,613,90).
 <- .print("Robotic arm agent: releasing part ", Part, ".");
    .broadcast(untell,part_in_place(Part));
    release_part;
+   .my_name(MyAgentName);
+   .print("Robotic arm agent: releasing lock for bin ", Part, ".");
+   .send(bin_locking_agent, achieve, unlock_bin(Part, MyAgentName));
    !!parkArm.
    
 // Position the arm in a waiting position outside the main assembly area
