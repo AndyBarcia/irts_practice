@@ -53,10 +53,10 @@ repair_time(30000).         // Time in ms to repair if broken
            .wait(ProdTime);
            .print("Production for bin ", N, " complete. Refilling.");
            refill_bin(N);
-           !monitor_bins_for_parts.
+           !monitor_bins_for_parts;
        };
        .print("Releasing lock for bin ", N, ".");
-       .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName));
+       .send(bin_locking_agent, achieve, unlock_bin(N, MyRobotName)).
 
 // --- Plan for Self-Repair ---
 
