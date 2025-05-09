@@ -12,6 +12,14 @@ repair_time(30000).         // Time in ms to repair if broken
 // --- Beliefs for State Management ---
 // +broken : Robot is currently broken and undergoing repairs.
 
+// --- Main plan ---
+
+!main.
+
++!main : true
+<- .print("Robot starting up...");
+   !monitor_bins_for_parts.
+
 // --- Plans for Monitoring Bins for Parts ---
 
 +!monitor_bins_for_parts
