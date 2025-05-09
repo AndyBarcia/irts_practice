@@ -39,6 +39,7 @@ human_bin(human_producer_bin4, 4).
 +!start_period
     <- .print("Standard period started.");
        
+       // Setup the initial state for the period.
        +produced_in_period(0);
        +on_schedule;
        .time(H,M,S);
@@ -47,9 +48,13 @@ human_bin(human_producer_bin4, 4).
        ?period_start_time(TestTime);
        !monitor_quota;
 
+       // Wait for the period to end.
        ?period_duration(Duration);
        .wait(Duration*1000);
 
+       // Check if the quota was met.
+       ?produced_in_period(P);
+       ?quota(Q);
        .print("Period ended. Produced: ", P, " (Quota: ", Q, ").");
         if (P < Q) { 
             .print("FAILED TO MEET QUOTA!") 
@@ -104,28 +109,43 @@ human_bin(human_producer_bin4, 4).
 // --- Plans to React to Behind Schedule ---
 
 -on_schedule
-    <- .print("Going behind schedule! Working faster!").
+    <- .print("Going behind schedule! Working faster!");
+       // If I'm behind schedule, I don't want to chat.
+       .drop_desire(want_to_chat(_)).
 
 +on_schedule
     <- .print("On schedule!").
 
 // --- Plans to React to Boredom ---
 
-+bored
++bored[source(self)]
     <- .print("I'm bored!");
+        // If bored, tell other humans that I'm bored.
        .my_name(MyHumanName);
-       .broadcast(tell, bored(MyHumanName)).
+       .broadcast(tell, bored).
 
--bored
+-bored[source(self)]
     <- .print("Not bored anymore!");
+        // If not bored anymore, tell other humans that I'm not bored.
        .my_name(MyHumanName);
-       .broadcast(untell, bored(MyHumanName)).
+       .broadcast(untell, bored).
 
 // --- Talk to other bored humans if on schedule ---
 
 +bored[source(OtherHumanName)]
-    : bored & on_schedule
-    <- ?max_chat_delay(MaxDelay);
+    : bored
+    <- // If another human is bored and so am I, we can chat.
+       !want_to_chat(OtherHumanName).
+
++bored[source(OtherHumanName)]
+    : not bored
+    <- // If another human is bored but I'm not, I don't want to chat.
+       .print("Sorry, can't chat right now with ", OtherHumanName, ", I'm not in the mood!").
+
++!want_to_chat(OtherHumanName)
+    : on_schedule
+    <- .print("I want to chat with ", OtherHumanName, "!");
+       ?max_chat_delay(MaxDelay);
        ?min_chat_delay(MinDelay);
        .random(R);
        ChatDelay = MinDelay + (MaxDelay - MinDelay) * R;
@@ -133,9 +153,9 @@ human_bin(human_producer_bin4, 4).
        .wait(ChatDelay);
        -bored.
 
-+bored[source(OtherHumanName)]
-    : not bored | not on_schedule
-    <- .print("Sorry, I'm busy right now!").
++!want_to_chat(OtherHumanName)
+    : not on_schedule
+    <- .print("Sorry, can't chat right now with ", OtherHumanName, ", I'm busy!").
 
 // --- Plans to React to Broadcasts from Bin Agents ---
 
