@@ -8,10 +8,14 @@ jason irts_practice.mas2j
 
 ![Factory video](video.gif)
 
+Authors:
+- Andy Barcia Rodríguez
+- Alberto Landi Cortiñas
+
 ## Key System Modifications:
 
 *   **Enhanced Bin Production**:
-    *   Introduction of `human_producer_bin.asl` agents (e.g., Bob, Alice, Tom, Mary) specializing in specific bin types, featuring work periods, quotas, variable speed, and social distraction mechanics.
+    *   Introduction of `human_producer_bin.asl` agents specializing in specific bin types, featuring work periods, quotas, variable speed, and social distraction mechanics.
     *   Conceptual robot bin producers: flexible, non-distracted, but with a chance of breakdown and repair.
     *   The `binagent.asl` now primarily represents the output/storage of these production processes.
 *   **Dual Welding Agents (Team 4 Specific)**:
@@ -32,24 +36,24 @@ This document outlines the roles, interactions, and key functionalities of the a
     *   **Note**: This agent is for holding components/materials. The actual construction of bins is handled by `human_producer_bin.asl` and dedicated robot agents.
     *   **Key Actions/Beliefs**: `refill_bin(N)` (environment action indicating a bin is filled by a producer), `binfull(N)` (belief).
 
-*   **`human_producer_bin.asl`** (e.g., `human_producer_bin1.asl`, etc.):
-    *   **Role**: Represents human workers (e.g., Bob, Alice, Tom, Mary) responsible for constructing specific types of bins.
+*   **`human_producer_bin.asl`**:
+    *   **Role**: Represents human workers responsible for constructing specific types of bins.
     *   **Functionality**:
         *   Each human agent specializes in building one type of bin.
-        *   They operate within pre-established work periods (e.g., 80000 ms) and have a production quota per period.
+        *   They operate within pre-established work periods and have a production quota per period.
         *   Production speed can vary: they can work faster to meet quotas or slower if distracted.
         *   Distractions can occur from chatting with other human agents (e.g., when bored, for 400-800 ms), but they must compensate for delays to meet their quota.
         *   They interact with a `bin_locking_agent` to get exclusive access to work on their assigned bin.
     *   **Interaction**: Listens for `needs_parts_public` broadcasts for their assigned bin, communicates with `bin_locking_agent` to acquire/release locks, and eventually triggers a `refill_bin` action in the environment.
 
-*   **Robot Bin Producers (conceptual, likely managed by a generic robot agent script)**:
+*   **`robot_parts_producer.asl`**:
     *   **Role**: Represents robot workers that construct bins.
     *   **Functionality**:
         *   Can build any type of bin as needed.
         *   Not subject to distractions like human agents.
         *   Maintain a consistent production rate for parts/bins.
         *   Have a probability of breaking down (e.g., 5-10%), requiring a fixed repair time.
-    *   **Interaction**: Similar to human producers, they interact with the environment to produce bins and must coordinate access to shared resources (e.g., the specific bin being worked on) through a locking mechanism to prevent conflicts, analogous to how human producers use the `bin_locking_agent`.
+    *   **Interaction**: Similar to human producers, they interact with the environment to produce bins and must coordinate access to shared resources through a locking mechanism to prevent conflicts, analogous to how human producers use the `bin_locking_agent`.
 
 *   **`assemblyareaagent.asl`**:
     *   **Role**: Manages exclusive access to "assembly areas" (physical zones 1 and 2) using a locking mechanism.
@@ -83,7 +87,7 @@ This document outlines the roles, interactions, and key functionalities of the a
 ### Overall Interaction Flow (Simplified):
 
 1.  **Bin Construction & Parts Supply**:
-    *   `human_producer_bin` agents and Robot Bin Producers construct bins. Humans specialize and manage quotas/distractions; robots are flexible but can break.
+    *   `human_producer_bin` agents and `robot_parts_producer` construct bins. Humans specialize and manage quotas/distractions; robots are flexible but can break.
     *   `binagent`s represent these constructed bins now filled with parts.
 2.  **Area Locking**: `roboticarmagent` & `weldingagent`s coordinate access to assembly areas via `assemblyareaagent`.
 3.  **Part Placement**: `roboticarmagent` picks parts from `binagent`s, places them in `holdingagent`s, which secure them. This involves communication between `roboticarmagent` and `holdingagent`.
